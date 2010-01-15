@@ -1,0 +1,91 @@
+#!/bin/bash
+#
+# @author Jinn Koriech
+# @url http://github.com/jinnko/vbox-helper
+# @since 2009-08-12
+# @version $Id: $
+#
+
+vbox_path=/Applications/VirtualBox.app/Contents/MacOS
+rdp_path=/Applications/TSclientX.app/dist/bin
+vms=`$vbox_path/VBoxManage list vms | awk '/^"/ { print $1 }'`
+vms=${vms//\"/}
+
+if [[ -z "$1" ]]; then
+	echo "Usage: $0 action host"
+	echo "  action:    start|stop|connect|list|listrunning"
+	echo -n "  host:      "
+	echo $vms
+	exit
+fi
+
+if [ -z "$VBOX_USER" -o -z "$VBOX_PASS" -o -z "$VBOX_DOMAIN" ]; then
+	echo "Environment variables not found.  Please set these so the rdesktop connection can be established"
+	[ -z "$VBOX_USER" ] && echo "VBOX_USER env var not set"
+	[ -z "$VBOX_PASS" ] && echo "VBOX_PASS env var not set"
+	[ -z "$VBOX_DOMAIN" ] && echo "VBOX_DOMAIN env var not set"
+	exit 1
+fi
+
+if [ -r "${HOME}-open/VirtualBox/Log/vrdp.log" ]; then
+	VRDP_AUTH_DEBUG_FILENAME=${HOME}-open/VirtualBox/Log/vrdp.log
+else
+	VRDP_AUTH_DEBUG_FILENAME=${HOME}/VirtualBox/Log/vrdp.log
+fi
+export VRDP_AUTH_DEBUG_FILENAME
+
+port=3389
+for vm in $vms; do
+	if [ "$vm" == "$2" ]; then
+		vm_port=$port
+		break
+	fi
+	((port++))
+done
+
+function check_input_for_host() {
+	if [ -z "$1" ]; then
+		echo "host not provided"
+		exit
+	fi
+}
+
+case "$1" in
+	start)
+		check_input_for_host "$2"
+		nohup $vbox_path/VBoxHeadless --startvm $2 -vrdp off &
+		;;
+	start+vrdp)
+		check_input_for_host "$2"
+		nohup $vbox_path/VBoxHeadless --startvm $2 -vrdpport $vm_port &
+		# This doesn't seem to do anything at all currently, so comment out
+		#sleep 5
+		#$vbox_path/VBoxManage controlvm $2 setcredentials $VBOX_USER $VBOX_PASS $VBOX_DOMAIN
+		;;
+	stop|halt|shutdown|shu*)
+		check_input_for_host "$2"
+		$vbox_path/VBoxManage controlvm $2 acpipowerbutton
+		;;
+	poweroff|pow*)
+		check_input_for_host "$2"
+		$vbox_path/VBoxManage controlvm $2 poweroff
+		;;
+	list|ls)
+		$vbox_path/VBoxManage list vms
+		;;
+	listr*|lsr|lr)
+		$vbox_path/VBoxManage list runningvms
+		;;
+	connect|conn*|rdp)
+		check_input_for_host "$2"
+		$rdp_path/rdesktop -u $VBOX_USER -d $VBOX_DOMAIN -p $VBOX_PASS -g 720x400 -a 15 127.0.0.1:${vm_port} &
+		;;
+	console)
+		check_input_for_host "$2"
+		minicom $2
+		;;
+	*)
+		echo "Unknown command"
+		;;
+esac
+
